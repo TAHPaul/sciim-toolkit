@@ -1,0 +1,43 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sciim-toolkit"
+version = "0.1.0"
+description = "SciIm Toolkit desktop app for scientific imaging planning and MA-XRF workflows"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "Paul van Laar" }]
+dependencies = [
+  "PySide6>=6.7",
+  "pyqtgraph>=0.13",
+  "numpy>=1.26",
+  "scipy>=1.11",
+  "scikit-image>=0.22",
+  "opencv-python>=4.9",
+  "tifffile>=2024.2",
+  "imageio>=2.34",
+]
+
+[project.optional-dependencies]
+registration = [
+  "SimpleITK>=2.3",
+]
+dev = [
+  "pytest>=8.2",
+  "ruff>=0.6",
+]
+
+[project.scripts]
+sciim-toolkit = "sciim_toolkit.app.main:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sciim_toolkit"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
