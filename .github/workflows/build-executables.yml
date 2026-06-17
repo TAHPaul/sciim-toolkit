@@ -15,9 +15,20 @@ permissions:
 
 jobs:
   build-macos:
-    # macos-13 is Intel (x86_64): the single most compatible Mac artifact — runs
-    # natively on Intel and on Apple Silicon via Rosetta.
-    runs-on: macos-13
+    # Build both Mac architectures in parallel:
+    #   macos-13 -> Intel (x86_64): runs on Intel Macs (and Apple Silicon via Rosetta)
+    #   macos-14 -> Apple Silicon (arm64): runs natively on M-series Macs
+    # An arm64 build will NOT run on Intel, so we ship one zip per architecture.
+    # (macos-14 is what "macos-latest" currently resolves to; pinned for stability.)
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-13
+            arch: intel
+          - runner: macos-14
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -34,11 +45,11 @@ jobs:
       - name: Zip .app bundle
         run: |
           cd dist
-          ditto -c -k --sequesterRsrc --keepParent "SciIm Toolkit.app" "../sciim-toolkit-macos.zip"
+          ditto -c -k --sequesterRsrc --keepParent "SciIm Toolkit.app" "../sciim-toolkit-macos-${{ matrix.arch }}.zip"
       - uses: actions/upload-artifact@v4
         with:
-          name: sciim-toolkit-macos
-          path: sciim-toolkit-macos.zip
+          name: sciim-toolkit-macos-${{ matrix.arch }}
+          path: sciim-toolkit-macos-${{ matrix.arch }}.zip
 
   build-windows:
     runs-on: windows-latest
@@ -76,12 +87,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         # Tag uses the run number so every manual build gets its own release with no
         # tag collisions and no manual version bumping. Marked prerelease since the
-        # builds are unsigned.
+        # builds are unsigned. The glob attaches all three zips (mac intel + mac arm64
+        # + windows), each downloaded into its own artifacts/<name>/ subdirectory.
         run: |
           gh release create "build-${{ github.run_number }}" \
             --repo "${{ github.repository }}" \
             --title "SciIm Toolkit ${{ inputs.version }} (build ${{ github.run_number }})" \
-            --notes "Standalone unsigned builds. First-launch steps in docs/BUILDING.md — macOS: right-click the app -> Open; Windows: More info -> Run anyway. Copy the zip off the shared drive and unzip locally before running." \
+            --notes "Standalone unsigned builds. macOS: choose -arm64 for Apple Silicon (M1/M2/M3/M4) or -intel for Intel Macs (Apple menu -> About This Mac to check). First-launch steps in docs/BUILDING.md — macOS: right-click the app -> Open; Windows: More info -> Run anyway. Copy the zip off the shared drive and unzip locally before running." \
             --prerelease \
-            "artifacts/sciim-toolkit-macos/sciim-toolkit-macos.zip" \
-            "artifacts/sciim-toolkit-windows/sciim-toolkit-windows.zip"
+            artifacts/*/*.zip

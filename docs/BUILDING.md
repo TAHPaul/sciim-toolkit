@@ -23,13 +23,14 @@ there's enough updates" control.
 3. (Optional) set the **version** label — it only affects the release name.
 4. Click **Run workflow**. The macOS and Windows jobs run in parallel (~10–20 min).
 5. When green, a **prerelease** appears under **Releases** named
-   `SciIm Toolkit <version> (build <run number>)` with two attachments:
-   - `sciim-toolkit-macos.zip`
+   `SciIm Toolkit <version> (build <run number>)` with three attachments:
+   - `sciim-toolkit-macos-arm64.zip` — Apple Silicon Macs (M1/M2/M3/M4)
+   - `sciim-toolkit-macos-intel.zip` — Intel Macs
    - `sciim-toolkit-windows.zip`
 
-   (The same two zips are also available as **Artifacts** on the workflow run page.)
+   (The same zips are also available as **Artifacts** on the workflow run page.)
 
-6. Download both zips and copy them to the shared drive.
+6. Download the zips and copy them to the shared drive.
 
 ---
 
@@ -42,12 +43,16 @@ there's enough updates" control.
    it locally. (Running it directly over the network share loads hundreds of library
    files across the network and is slow/unreliable.)
 
-2. **macOS** (`sciim-toolkit-macos.zip` → `SciIm Toolkit.app`)
+2. **macOS** — pick the zip for your chip (`SciIm Toolkit.app` inside):
+   - **Which one?** Apple menu → **About This Mac**. A "Chip" line starting with **Apple**
+     (M1/M2/M3/M4) → use **`-arm64`**. A "Processor" line saying **Intel** → use **`-intel`**.
+     (If unsure, `-intel` runs on both via Rosetta; `-arm64` will not run on Intel.)
    - First launch: **right-click** the app → **Open** → **Open** in the dialog.
      (After the first time, double-click works normally.)
    - If macOS still refuses ("app is damaged"), run once in Terminal:
      `xattr -cr "SciIm Toolkit.app"`
-   - On Apple Silicon Macs you may get a one-time prompt to install **Rosetta** — accept it.
+   - If you run the `-intel` build on an Apple Silicon Mac, macOS may prompt once to
+     install **Rosetta** — accept it. (The `-arm64` build needs no Rosetta.)
 
 3. **Windows** (`sciim-toolkit-windows.zip` → `SciIm Toolkit\` folder)
    - Unzip the whole folder, then run **`SciIm Toolkit.exe`** inside it.
@@ -87,5 +92,3 @@ open "dist/SciIm Toolkit.app"
   certificate).
 - **App icon** — currently the default; drop an `.icns`/`.ico` into the repo and
   reference it in `sciim_toolkit.spec`.
-- **Native Apple Silicon build** — today we ship one Intel build that runs everywhere via
-  Rosetta. A second `macos-14` job could add a native arm64 zip.
