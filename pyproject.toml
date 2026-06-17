@@ -28,6 +28,9 @@ dev = [
   "pytest>=8.2",
   "ruff>=0.6",
 ]
+build = [
+  "pyinstaller>=6.6",
+]
 
 [project.scripts]
 sciim-toolkit = "sciim_toolkit.app.main:main"

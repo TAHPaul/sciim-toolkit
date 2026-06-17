@@ -20,6 +20,13 @@ This repository now includes the first runnable application shell and the first 
 3. Run the app:
    - `sciim-toolkit`
 
+## Standalone app (no Python needed)
+Colleagues can run SciIm Toolkit as a double-click app on **macOS** and **Windows**
+without installing Python or setting up a venv. Builds are produced on demand via a
+manual GitHub Actions workflow ("Build executables") and published as a release with a
+zip per platform. See [docs/BUILDING.md](docs/BUILDING.md) for how to trigger a build and
+how to run the result.
+
 ## Project Layout
 - `src/sciim_toolkit/app` - main application and window shell
 - `src/sciim_toolkit/features` - feature tabs/modules

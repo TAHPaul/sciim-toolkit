@@ -1,0 +1,87 @@
+name: Build executables
+
+# Manual trigger only — run this when you've accumulated enough updates to cut a
+# new standalone build. GitHub -> Actions -> "Build executables" -> Run workflow.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version label shown in the release name (e.g. 0.2.0)"
+        required: false
+        default: "0.1.0"
+
+permissions:
+  contents: write # required for the release job to publish
+
+jobs:
+  build-macos:
+    # macos-13 is Intel (x86_64): the single most compatible Mac artifact — runs
+    # natively on Intel and on Apple Silicon via Rosetta.
+    runs-on: macos-13
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install ".[build]"
+      - name: Build with PyInstaller
+        run: pyinstaller --noconfirm sciim_toolkit.spec
+      - name: Zip .app bundle
+        run: |
+          cd dist
+          ditto -c -k --sequesterRsrc --keepParent "SciIm Toolkit.app" "../sciim-toolkit-macos.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sciim-toolkit-macos
+          path: sciim-toolkit-macos.zip
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install ".[build]"
+      - name: Build with PyInstaller
+        run: pyinstaller --noconfirm sciim_toolkit.spec
+      - name: Zip build folder
+        shell: pwsh
+        # Zip the folder itself so colleagues unzip a tidy "SciIm Toolkit\" directory.
+        run: Compress-Archive -Path "dist/SciIm Toolkit" -DestinationPath "sciim-toolkit-windows.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sciim-toolkit-windows
+          path: sciim-toolkit-windows.zip
+
+  release:
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # Tag uses the run number so every manual build gets its own release with no
+        # tag collisions and no manual version bumping. Marked prerelease since the
+        # builds are unsigned.
+        run: |
+          gh release create "build-${{ github.run_number }}" \
+            --repo "${{ github.repository }}" \
+            --title "SciIm Toolkit ${{ inputs.version }} (build ${{ github.run_number }})" \
+            --notes "Standalone unsigned builds. First-launch steps in docs/BUILDING.md — macOS: right-click the app -> Open; Windows: More info -> Run anyway. Copy the zip off the shared drive and unzip locally before running." \
+            --prerelease \
+            "artifacts/sciim-toolkit-macos/sciim-toolkit-macos.zip" \
+            "artifacts/sciim-toolkit-windows/sciim-toolkit-windows.zip"
