@@ -197,6 +197,8 @@ class MapSetupTab(QWidget):
             self.current_folder = Path(folder)
             if self.session:
                 self.session.maxrf_pipeline.last_selected_folder = str(self.current_folder)
+                self.session.touch()
+                self.session_changed.emit(self.session)
             self._populate_table()
 
     def _populate_table(self) -> None:
@@ -608,6 +610,7 @@ class MapSetupTab(QWidget):
         # Emit signal and show success
         self.session.touch()
         self.session_changed.emit(self.session)
+        self.folder_loaded.emit()
 
         QMessageBox.information(
             self, "Success", f"Copied {copied_count} file(s) to project workspace."

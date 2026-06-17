@@ -75,3 +75,4 @@ htmlcov/
 # Development & Testing
 /archive/
 docs/todo*.md
+.planning/

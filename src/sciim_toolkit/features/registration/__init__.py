@@ -1,1 +1,3 @@
-"""Registration module (implementation in progress)."""
+from .ui import RegistrationTab
+
+__all__ = ["RegistrationTab"]

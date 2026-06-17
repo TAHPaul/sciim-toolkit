@@ -10,10 +10,11 @@ class SessionIOError(Exception):
     pass
 
 
-def save_session(path: Path, session: ProjectSession) -> None:
+def save_session(path: Path, session: ProjectSession, update_project_file: bool = True) -> None:
     try:
         session.touch()
-        session.project_file = str(path)
+        if update_project_file:
+            session.project_file = str(path)
         payload = session.to_dict()
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(payload, indent=2), encoding="utf-8")

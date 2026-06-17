@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -106,6 +107,8 @@ class EditLayer:
 class MaxrfEditTab(QtWidgets.QWidget):
     """MA-XRF editing tab with n-layer false-colour compositing."""
 
+    session_changed = QtCore.Signal()
+
     BLEND_MODES = ["Normal", "Add", "Multiply", "Screen", "Subtract", "Difference"]
 
     def __init__(self, parent=None) -> None:
@@ -123,6 +126,7 @@ class MaxrfEditTab(QtWidgets.QWidget):
         self._project_root: Path | None = None  # Track project root for refreshing manifest
         self._preview_mode = "composite"  # "composite" or "single" (single element)
         self._preview_single_index = -1  # Which layer to show in single mode
+        self._is_restoring_session_stack = False
         
         # Heatmap settings
         self._heatmap_enabled = False
@@ -392,7 +396,10 @@ class MaxrfEditTab(QtWidgets.QWidget):
         if not folder:
             return
 
-        selected = Path(folder)
+        self._load_from_folder(Path(folder))
+
+    def _load_from_folder(self, selected: Path) -> None:
+        """Load map entries directly from a selected folder in standalone mode."""
         exts = {".tif", ".tiff", ".png", ".jpg", ".jpeg"}
         files = sorted([p for p in selected.iterdir() if p.is_file() and p.suffix.lower() in exts])
 
@@ -404,17 +411,60 @@ class MaxrfEditTab(QtWidgets.QWidget):
             )
             self.work_folder = selected
             self.lbl_folder.setText(selected.name)
-            self.map_files = []
-            self.list_maps.clear()
+            self.map_entries = []
+            self.table_maps.setRowCount(0)
+            self.layers.clear()
+            self.list_layers.clear()
+            self._last_composite = None
+            self.lbl_preview.setText("No supported image files in selected folder")
+            self.lbl_preview.setPixmap(QtGui.QPixmap())
+            self._persist_overlay_stack_to_session()
             return
 
         self.work_folder = selected
-        self.map_files = files
         self.lbl_folder.setText(selected.name)
+        self._project_root = None
 
-        self.list_maps.clear()
-        for p in files:
-            self.list_maps.addItem(p.name)
+        self.map_entries = []
+        for idx, path in enumerate(files):
+            element, line_family = self._detect_element_and_line_from_filename(path.stem)
+            self.map_entries.append(
+                OverlayMapEntry(
+                    element=element,
+                    line_family=line_family,
+                    path=path,
+                    color="#ffffff",
+                    raw_path=path,
+                    corrected_path=None,
+                    using_corrected=False,
+                    fc_path=None,
+                    fc_profile="",
+                )
+            )
+
+        self.layers.clear()
+        self.list_layers.clear()
+        self._refresh_map_table()
+        if self.map_entries:
+            self.table_maps.selectRow(0)
+            self._preview_element_map(self.map_entries[0])
+        self._persist_overlay_stack_to_session()
+
+    def _detect_element_and_line_from_filename(self, stem: str) -> tuple[str, str]:
+        detected_line = "Unknown"
+        line_match = re.search(r"([KLM])(?:alpha|beta|a|b|1|2)?$", stem, flags=re.IGNORECASE)
+        if line_match:
+            detected_line = line_match.group(1).upper()
+
+        token_match = re.search(r"\b([A-Z][a-z]?)\b", stem)
+        if token_match:
+            return token_match.group(1), detected_line
+
+        compact_match = re.search(r"([A-Z][a-z]?)(?:[KLM](?:alpha|beta|a|b|1|2)?)", stem)
+        if compact_match:
+            return compact_match.group(1), detected_line
+
+        return "Unknown", detected_line
 
     def add_selected_layers(self) -> None:
         """Add selected element maps from the table to the layer stack."""
@@ -453,6 +503,7 @@ class MaxrfEditTab(QtWidgets.QWidget):
         if self.layers:
             self.list_layers.setCurrentRow(len(self.layers) - 1)
         self._recompute_preview()
+        self._persist_overlay_stack_to_session()
 
     def _refresh_layer_list(self) -> None:
         self.list_layers.clear()
@@ -579,6 +630,7 @@ class MaxrfEditTab(QtWidgets.QWidget):
         self._refresh_layer_list()
         self.list_layers.setCurrentRow(idx)
         self._recompute_preview()
+        self._persist_overlay_stack_to_session()
 
     def _set_preview_composite(self) -> None:
         """Switch to composite preview mode showing all visible layers blended."""
@@ -600,6 +652,7 @@ class MaxrfEditTab(QtWidgets.QWidget):
         """Toggle heatmap rendering on/off."""
         self._heatmap_enabled = self.btn_heatmap.isChecked()
         self._recompute_preview()
+        self._persist_overlay_stack_to_session()
 
     def _on_heatmap_auto_changed(self) -> None:
         """Handle auto-range checkbox change."""
@@ -612,6 +665,7 @@ class MaxrfEditTab(QtWidgets.QWidget):
             self._compute_heatmap_range()
         
         self._recompute_preview()
+        self._persist_overlay_stack_to_session()
 
     def _on_heatmap_range_changed(self) -> None:
         """Handle manual min/max changes."""
@@ -619,6 +673,7 @@ class MaxrfEditTab(QtWidgets.QWidget):
             self._heatmap_min = self.sp_heatmap_min.value()
             self._heatmap_max = self.sp_heatmap_max.value()
             self._recompute_preview()
+            self._persist_overlay_stack_to_session()
 
     def _compute_heatmap_range(self) -> None:
         """Compute heatmap range using percentile clipping (1-99)."""
@@ -667,6 +722,7 @@ class MaxrfEditTab(QtWidgets.QWidget):
         self._refresh_layer_list()
         self.list_layers.setCurrentRow(idx)
         self._recompute_preview()
+        self._persist_overlay_stack_to_session()
 
     def move_layer_up(self) -> None:
         idx = self._current_layer_index()
@@ -676,6 +732,7 @@ class MaxrfEditTab(QtWidgets.QWidget):
         self._refresh_layer_list()
         self.list_layers.setCurrentRow(idx - 1)
         self._recompute_preview()
+        self._persist_overlay_stack_to_session()
 
     def move_layer_down(self) -> None:
         idx = self._current_layer_index()
@@ -685,6 +742,7 @@ class MaxrfEditTab(QtWidgets.QWidget):
         self._refresh_layer_list()
         self.list_layers.setCurrentRow(idx + 1)
         self._recompute_preview()
+        self._persist_overlay_stack_to_session()
 
     def remove_selected_layer(self) -> None:
         idx = self._current_layer_index()
@@ -695,6 +753,7 @@ class MaxrfEditTab(QtWidgets.QWidget):
         if self.layers:
             self.list_layers.setCurrentRow(min(idx, len(self.layers) - 1))
         self._recompute_preview()
+        self._persist_overlay_stack_to_session()
 
     def _load_norm_image(self, path: Path) -> np.ndarray:
         cached = self._norm_cache.get(path)
@@ -925,6 +984,7 @@ class MaxrfEditTab(QtWidgets.QWidget):
         self._refresh_layer_list()
         self._sync_selected_layer_to_ui()
         self._recompute_preview()
+        self._persist_overlay_stack_to_session()
 
     def delete_preset(self) -> None:
         preset_name = self.combo_presets.currentText()
@@ -951,18 +1011,140 @@ class MaxrfEditTab(QtWidgets.QWidget):
             
             # Load from manifest to auto-populate with all elements
             self._load_from_manifest(project_root)
+            self._restore_overlay_stack_from_session()
             return
         
         # No project: enable browse button
         self.btn_browse.setEnabled(True)
         self.btn_browse.setToolTip("")
+        self._project_root = None
+
+        if session and session.maxrf_pipeline.last_selected_folder:
+            last_folder = Path(session.maxrf_pipeline.last_selected_folder)
+            if last_folder.exists() and last_folder.is_dir():
+                self._load_from_folder(last_folder)
+                self._restore_overlay_stack_from_session()
+                return
+
         self.work_folder = None
         self.lbl_folder.setText("No folder selected")
-        self._project_root = None
         self.map_entries.clear()
         self.layers.clear()
         self.table_maps.setRowCount(0)
         self.list_layers.clear()
+        self._restore_overlay_stack_from_session()
+
+    def _serialize_path_for_session(self, path: Path | None) -> str:
+        if path is None:
+            return ""
+        if self.session is not None and getattr(self.session, "project_file", ""):
+            return self.session.relativize_for_project(path)
+        return str(path)
+
+    def _deserialize_path_from_session(self, value: str) -> Path | None:
+        if not value:
+            return None
+        if self.session is not None:
+            return self.session.resolve_relative_path(value)
+        return Path(value)
+
+    def _persist_overlay_stack_to_session(self) -> None:
+        if self.session is None or self._is_restoring_session_stack:
+            return
+
+        payload_layers: list[dict[str, object]] = []
+        for layer in self.layers:
+            payload_layers.append(
+                {
+                    "name": layer.name,
+                    "path": self._serialize_path_for_session(layer.path),
+                    "color": layer.color,
+                    "opacity": layer.opacity,
+                    "blend_mode": layer.blend_mode,
+                    "visible": layer.visible,
+                    "fc_path": self._serialize_path_for_session(layer.fc_path),
+                    "fc_colour": layer.fc_colour or "",
+                    "fc_profile": layer.fc_profile,
+                    "raw_path": self._serialize_path_for_session(layer.raw_path),
+                    "using_raw": layer.using_raw,
+                }
+            )
+
+        self.session.maxrf_pipeline.overlay_stack_state = {
+            "layers": payload_layers,
+            "preview_mode": self._preview_mode,
+            "preview_single_index": self._preview_single_index,
+            "heatmap_enabled": self._heatmap_enabled,
+            "heatmap_auto_range": self._heatmap_auto_range,
+            "heatmap_min": self._heatmap_min,
+            "heatmap_max": self._heatmap_max,
+        }
+        self.session.touch()
+        self.session_changed.emit()
+
+    def _restore_overlay_stack_from_session(self) -> None:
+        if self.session is None:
+            return
+
+        state = self.session.maxrf_pipeline.overlay_stack_state
+        if not isinstance(state, dict):
+            return
+
+        raw_layers = state.get("layers", [])
+        if not isinstance(raw_layers, list):
+            raw_layers = []
+
+        restored_layers: list[EditLayer] = []
+        for entry in raw_layers:
+            if not isinstance(entry, dict):
+                continue
+
+            layer_path = self._deserialize_path_from_session(str(entry.get("path", "")))
+            if layer_path is None:
+                continue
+
+            restored_layers.append(
+                EditLayer(
+                    name=str(entry.get("name", layer_path.stem)),
+                    path=layer_path,
+                    color=str(entry.get("color", "#ffffff")),
+                    opacity=float(entry.get("opacity", 1.0)),
+                    blend_mode=str(entry.get("blend_mode", "Normal")),
+                    visible=bool(entry.get("visible", True)),
+                    fc_path=self._deserialize_path_from_session(str(entry.get("fc_path", ""))),
+                    fc_colour=str(entry.get("fc_colour", "")) or None,
+                    fc_profile=str(entry.get("fc_profile", "")),
+                    raw_path=self._deserialize_path_from_session(str(entry.get("raw_path", ""))),
+                    using_raw=bool(entry.get("using_raw", False)),
+                )
+            )
+
+        self._is_restoring_session_stack = True
+        try:
+            self.layers = restored_layers
+            self._preview_mode = str(state.get("preview_mode", "composite"))
+            self._preview_single_index = int(state.get("preview_single_index", -1))
+            self._heatmap_enabled = bool(state.get("heatmap_enabled", False))
+            self._heatmap_auto_range = bool(state.get("heatmap_auto_range", True))
+            self._heatmap_min = float(state.get("heatmap_min", 0.0))
+            self._heatmap_max = float(state.get("heatmap_max", 1.0))
+
+            self.btn_preview_composite.setChecked(self._preview_mode != "single")
+            self.btn_preview_single.setChecked(self._preview_mode == "single")
+            self.btn_heatmap.setChecked(self._heatmap_enabled)
+            self.chk_heatmap_auto.setChecked(self._heatmap_auto_range)
+            self.sp_heatmap_min.setEnabled(not self._heatmap_auto_range)
+            self.sp_heatmap_max.setEnabled(not self._heatmap_auto_range)
+            self.sp_heatmap_min.setValue(self._heatmap_min)
+            self.sp_heatmap_max.setValue(self._heatmap_max)
+
+            self._refresh_layer_list()
+            if self.layers:
+                selected_idx = min(max(self._preview_single_index, 0), len(self.layers) - 1)
+                self.list_layers.setCurrentRow(selected_idx)
+            self._recompute_preview()
+        finally:
+            self._is_restoring_session_stack = False
 
     def _load_from_manifest(self, project_root: Path) -> None:
         """Load element maps from manifest into the Element Maps table.

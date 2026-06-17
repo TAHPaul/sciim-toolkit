@@ -36,6 +36,10 @@ class CanvasView(QtWidgets.QGraphicsView):
         self.scene_obj = QtWidgets.QGraphicsScene()
         self.setScene(self.scene_obj)
         self.setRenderHint(QtGui.QPainter.RenderHint.SmoothPixmapTransform)
+        self.setTransformationAnchor(
+            QtWidgets.QGraphicsView.ViewportAnchor.AnchorUnderMouse
+        )
+        self.setResizeAnchor(QtWidgets.QGraphicsView.ViewportAnchor.AnchorViewCenter)
 
         self.setSizePolicy(
             QtWidgets.QSizePolicy.Policy.Expanding,
@@ -48,19 +52,43 @@ class CanvasView(QtWidgets.QGraphicsView):
 
         self.image_width = 1
         self.image_height = 1
+        self._fitted_once = False
+        self._has_user_zoom = False
+        self._zoom_level = 1.0
+        self._zoom_step = 1.15
+        self._min_zoom_level = 0.2
+        self._max_zoom_level = 20.0
+
+    def _fit_image_in_view(self):
+        """Fit full image in view and reset zoom state."""
+        self.resetTransform()
+        self._zoom_level = 1.0
+        self._has_user_zoom = False
+        self.fitInView(
+            self.scene_obj.itemsBoundingRect(),
+            QtCore.Qt.AspectRatioMode.KeepAspectRatio,
+        )
+        self._fitted_once = True
+
+    def reset_zoom(self):
+        """Reset zoom and fit the full image in view."""
+        if self.image_width > 1 and self.image_height > 1:
+            self._fit_image_in_view()
 
     def resizeEvent(self, event):
         """Refill the view when resized."""
         super().resizeEvent(event)
-        if self.image_width > 1 and self.image_height > 1:
-            self.fitInView(
-                self.scene_obj.itemsBoundingRect(),
-                QtCore.Qt.AspectRatioMode.KeepAspectRatio,
-            )
+        if self.image_width > 1 and self.image_height > 1 and not self._has_user_zoom:
+            self._fit_image_in_view()
 
     def set_image(self, img_array: np.ndarray):
         """Set the image to display (should be RGB or RGBA, 0-1 float)."""
+        prev_width = self.image_width
+        prev_height = self.image_height
         self.image_height, self.image_width = img_array.shape[:2]
+        image_size_changed = (
+            self.image_width != prev_width or self.image_height != prev_height
+        )
 
         # Convert to uint8
         if img_array.dtype == np.float32 or img_array.dtype == np.float64:
@@ -91,10 +119,44 @@ class CanvasView(QtWidgets.QGraphicsView):
         # Display
         pixmap = QtGui.QPixmap.fromImage(q_img)
         self.img_item.setPixmap(pixmap)
-        self.fitInView(
-            self.scene_obj.itemsBoundingRect(),
-            QtCore.Qt.AspectRatioMode.KeepAspectRatio,
-        )
+
+        if image_size_changed or not self._fitted_once:
+            self._fit_image_in_view()
+
+    def wheelEvent(self, event: QtGui.QWheelEvent):
+        """Zoom in/out with mouse wheel while keeping cursor as zoom anchor."""
+        if self.img_item.pixmap().isNull():
+            event.ignore()
+            return
+
+        delta_y = event.angleDelta().y()
+        if delta_y == 0:
+            event.ignore()
+            return
+
+        step_count = delta_y / 120.0
+        zoom_multiplier = self._zoom_step**step_count
+        target_zoom = self._zoom_level * zoom_multiplier
+        target_zoom = min(max(target_zoom, self._min_zoom_level), self._max_zoom_level)
+
+        applied_multiplier = target_zoom / self._zoom_level
+        if applied_multiplier != 1.0:
+            self.scale(applied_multiplier, applied_multiplier)
+            self._zoom_level = target_zoom
+            self._has_user_zoom = abs(self._zoom_level - 1.0) > 1e-6
+
+        event.accept()
+
+    def keyPressEvent(self, event: QtGui.QKeyEvent):
+        """Reset to fit view with the F key."""
+        if (
+            event.key() == QtCore.Qt.Key.Key_F
+            and event.modifiers() == QtCore.Qt.KeyboardModifier.NoModifier
+        ):
+            self.reset_zoom()
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     def mousePressEvent(self, event: QtGui.QMouseEvent):
         """Handle mouse press."""
@@ -182,6 +244,10 @@ class PolygonDrawingWidget(QtWidgets.QWidget):
     def set_combine_mode(self, mode: str):
         """Set the combine mode: 'add', 'subtract', or 'intersect'."""
         self.combine_mode = mode
+
+    def reset_zoom(self):
+        """Reset canvas zoom to fit image."""
+        self.canvas_view.reset_zoom()
 
     def _on_mouse_pressed(self, x: int, y: int):
         """Handle mouse press event."""

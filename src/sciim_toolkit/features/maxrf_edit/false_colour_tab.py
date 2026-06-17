@@ -227,7 +227,10 @@ class MaxrfFalseColourTab(QtWidgets.QWidget):
         if not folder:
             return
 
-        selected = Path(folder)
+        self._load_from_folder(Path(folder))
+
+    def _load_from_folder(self, selected: Path) -> None:
+        """Load elemental maps directly from a selected folder in standalone mode."""
         exts = {".tif", ".tiff", ".png", ".jpg", ".jpeg"}
         files = sorted([p for p in selected.iterdir() if p.is_file() and p.suffix.lower() in exts])
 
@@ -851,9 +854,16 @@ class MaxrfFalseColourTab(QtWidgets.QWidget):
         # No project: enable browse button
         self.btn_browse.setEnabled(True)
         self.btn_browse.setToolTip("")
+        self._project_root = None
+
+        if session and session.maxrf_pipeline.last_selected_folder:
+            last_folder = Path(session.maxrf_pipeline.last_selected_folder)
+            if last_folder.exists() and last_folder.is_dir():
+                self._load_from_folder(last_folder)
+                return
+
         self.work_folder = None
         self.lbl_folder.setText("No folder selected")
-        self._project_root = None
         self.entries.clear()
         self._refresh_table()
 

@@ -36,10 +36,10 @@ class ImagingPlannerTab(QtWidgets.QWidget):
         controls_scroll = QtWidgets.QScrollArea()
         controls_scroll.setWidgetResizable(True)
         controls_scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        controls_scroll.setMinimumWidth(560)
-        controls_scroll.setMaximumWidth(640)
+        controls_scroll.setMinimumWidth(380)
+        controls_scroll.setMaximumWidth(520)
         controls_container = QtWidgets.QWidget()
-        controls_container.setMinimumWidth(540)
+        controls_container.setMinimumWidth(360)
         self.controls_layout = QtWidgets.QVBoxLayout(controls_container)
         controls_layout = self.controls_layout
         controls_layout.setContentsMargins(8, 8, 8, 8)
@@ -53,12 +53,12 @@ class ImagingPlannerTab(QtWidgets.QWidget):
         split = QtWidgets.QHBoxLayout()
         self.preview_normal = QtWidgets.QLabel("Normal orientation")
         self.preview_normal.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-        self.preview_normal.setMinimumSize(320, 320)
+        self.preview_normal.setMinimumSize(220, 220)
         self.preview_normal.setStyleSheet("border: 1px solid #aaa; background: #111; color: #ddd;")
 
         self.preview_sideways = QtWidgets.QLabel("Sideways orientation")
         self.preview_sideways.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-        self.preview_sideways.setMinimumSize(320, 320)
+        self.preview_sideways.setMinimumSize(220, 220)
         self.preview_sideways.setStyleSheet("border: 1px solid #aaa; background: #111; color: #ddd;")
 
         split.addWidget(self.preview_normal, 1)
@@ -79,48 +79,13 @@ class ImagingPlannerTab(QtWidgets.QWidget):
         splitter.addWidget(preview_container)
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
-        splitter.setSizes([560, 980])
+        splitter.setSizes([420, 900])
         root.addWidget(splitter, 1)
         self.main_splitter = splitter
 
-        self._build_metadata_group()
         self._build_modality_group()
         self._build_summary_group()
         self.controls_layout.addStretch(1)
-
-    def _build_metadata_group(self) -> None:
-        group = QtWidgets.QGroupBox("Painting Metadata")
-        form = QtWidgets.QFormLayout(group)
-
-        self.ed_title = QtWidgets.QLineEdit()
-        self.ed_artist = QtWidgets.QLineEdit()
-        self.ed_hki = QtWidgets.QLineEdit()
-        self.ed_inventory = QtWidgets.QLineEdit()
-        self.sp_width = QtWidgets.QDoubleSpinBox()
-        self.sp_width.setRange(0.0, 10000.0)
-        self.sp_width.setSuffix(" cm")
-        self.sp_width.setDecimals(1)
-        self.sp_height = QtWidgets.QDoubleSpinBox()
-        self.sp_height.setRange(0.0, 10000.0)
-        self.sp_height.setSuffix(" cm")
-        self.sp_height.setDecimals(1)
-        self.btn_load_image = QtWidgets.QPushButton("Load painting image…")
-        self.ed_image_path = QtWidgets.QLineEdit()
-        self.ed_image_path.setReadOnly(True)
-        self.ed_image_path.setMinimumWidth(420)
-        self.ed_image_path.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Fixed)
-        self.ed_image_path.setPlaceholderText("No image selected")
-
-        form.addRow("Title", self.ed_title)
-        form.addRow("Artist", self.ed_artist)
-        form.addRow("HKI number", self.ed_hki)
-        form.addRow("Inventory ID", self.ed_inventory)
-        form.addRow("Width", self.sp_width)
-        form.addRow("Height", self.sp_height)
-        form.addRow(self.btn_load_image)
-        form.addRow("Image", self.ed_image_path)
-
-        self.controls_layout.addWidget(group)
 
     def _modality_row(self, name: str) -> tuple[QtWidgets.QWidget, dict[str, QtWidgets.QWidget]]:
         row = QtWidgets.QGridLayout()
@@ -232,18 +197,12 @@ class ImagingPlannerTab(QtWidgets.QWidget):
         self.controls_layout.addWidget(group)
 
     def _bind_signals(self) -> None:
-        self.btn_load_image.clicked.connect(self._on_load_image)
         self.btn_recompute.clicked.connect(self.recompute)
         self.combo_preview_modality.currentIndexChanged.connect(self.recompute)
         self.btn_export_summary.clicked.connect(self._export_summary)
         self.btn_export_csv.clicked.connect(self._export_csv)
         self.btn_export_json.clicked.connect(self._export_json)
         self.btn_export_visual.clicked.connect(self._export_visual)
-
-        for widget in [self.ed_title, self.ed_artist, self.ed_hki, self.ed_inventory]:
-            widget.textChanged.connect(self._pull_ui_into_session)
-        for widget in [self.sp_width, self.sp_height]:
-            widget.valueChanged.connect(self._pull_ui_into_session)
 
         for row in self.modality_widgets.values():
             row["check"].stateChanged.connect(self._pull_ui_into_session)
@@ -263,17 +222,7 @@ class ImagingPlannerTab(QtWidgets.QWidget):
 
         self._is_loading_ui = True
         try:
-            art = self._session.artwork
-            self.ed_title.setText(art.title)
-            self.ed_artist.setText(art.artist)
-            self.ed_hki.setText(art.hki)
-            self.ed_inventory.setText(art.inventory_id)
-            self.sp_width.setValue(art.width_cm)
-            self.sp_height.setValue(art.height_cm)
-
             image_path = self._session.imaging_planner.painting_image_path
-            self.ed_image_path.setText(image_path or "")
-            self.ed_image_path.setToolTip(image_path or "No image selected")
 
             for name, cfg in self._session.imaging_planner.modalities.items():
                 row = self.modality_widgets[name]
@@ -295,14 +244,6 @@ class ImagingPlannerTab(QtWidgets.QWidget):
         if self._session is None or self._is_loading_ui:
             return
 
-        art = self._session.artwork
-        art.title = self.ed_title.text().strip()
-        art.artist = self.ed_artist.text().strip()
-        art.hki = self.ed_hki.text().strip()
-        art.inventory_id = self.ed_inventory.text().strip()
-        art.width_cm = float(self.sp_width.value())
-        art.height_cm = float(self.sp_height.value())
-
         for name, row in self.modality_widgets.items():
             cfg: ModalityConfig = self._session.imaging_planner.modalities[name]
             cfg.enabled = bool(row["check"].isChecked())
@@ -313,30 +254,6 @@ class ImagingPlannerTab(QtWidgets.QWidget):
             cfg.overlap_unit = "cm" if unit_combo.currentText() == "cm" else "percent"
 
         self.session_changed.emit()
-
-    def _on_load_image(self) -> None:
-        if self._session is None:
-            return
-
-        start_dir = str(Path.home())
-        if self._session.imaging_planner.painting_image_path:
-            start_dir = str(Path(self._session.imaging_planner.painting_image_path).parent)
-
-        path, _ = QtWidgets.QFileDialog.getOpenFileName(
-            self,
-            "Load painting image",
-            start_dir,
-            "Images (*.png *.jpg *.jpeg *.tif *.tiff)",
-        )
-        if not path:
-            return
-
-        self._session.imaging_planner.painting_image_path = path
-        self.ed_image_path.setText(path)
-        self.ed_image_path.setToolTip(path)
-        self._load_preview_pixmap(Path(path))
-        self.session_changed.emit()
-        self.recompute()
 
     def _load_preview_pixmap(self, path: Path) -> None:
         if not path or not path.exists():
@@ -614,7 +531,8 @@ class ImagingPlannerTab(QtWidgets.QWidget):
         title = art.title.strip() or "Untitled"
         hki = art.hki.strip() or "-"
         inv = art.inventory_id.strip() or "-"
-        return f"{artist} - \"{title}\" (HKI{hki}; INV {inv})"
+        collection = art.collection.strip() or "-"
+        return f"{artist} - \"{title}\" (HKI{hki}; INV {inv}; Collection {collection})"
 
     def _build_export_composite(self, modality: str, cfg: ModalityConfig) -> QtGui.QPixmap:
         if self._session is None:
@@ -1175,6 +1093,7 @@ class ImagingPlannerTab(QtWidgets.QWidget):
                 "title": self._session.artwork.title,
                 "artist": self._session.artwork.artist,
                 "hki": self._session.artwork.hki,
+                "collection": self._session.artwork.collection,
                 "inventory_id": self._session.artwork.inventory_id,
                 "width_cm": self._session.artwork.width_cm,
                 "height_cm": self._session.artwork.height_cm,

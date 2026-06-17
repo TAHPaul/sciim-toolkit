@@ -215,6 +215,12 @@ class PolygonDrawerDialog(QtWidgets.QDialog):
         self.drawer = PolygonDrawingWidget(self.image)
         root.addWidget(self.drawer, 1)
 
+        self.shortcut_fit_drawer = QtGui.QShortcut(QtGui.QKeySequence("F"), self.drawer)
+        self.shortcut_fit_drawer.setContext(
+            QtCore.Qt.ShortcutContext.WidgetWithChildrenShortcut
+        )
+        self.shortcut_fit_drawer.activated.connect(self.drawer.reset_zoom)
+
         # Tools and controls row
         tools_row = QtWidgets.QHBoxLayout()
 
@@ -326,9 +332,13 @@ class PolygonDrawerDialog(QtWidgets.QDialog):
         self.btn_clear = QtWidgets.QPushButton("Clear All")
         self.btn_clear.clicked.connect(self.drawer.clear_all)
 
+        self.btn_fit = QtWidgets.QPushButton("Fit / Reset Zoom")
+        self.btn_fit.clicked.connect(self.drawer.reset_zoom)
+
         edit_layout.addWidget(self.btn_finalize)
         edit_layout.addWidget(self.btn_undo)
         edit_layout.addWidget(self.btn_clear)
+        edit_layout.addWidget(self.btn_fit)
         edit_layout.addStretch(1)
         tools_row.addWidget(edit_group)
 
@@ -455,7 +465,6 @@ class MaxrfCorrectionsTab(QtWidgets.QWidget):
         self.corr_a: np.ndarray | None = None
         self.corr_b: np.ndarray | None = None
         self.corr_c: np.ndarray | None = None
-        self.corr_c: np.ndarray | None = None
         self.params_a = CorrectionParams(enabled=False)
         self.params_b = CorrectionParams(enabled=False)
         self.params_c = CorrectionParams(enabled=False)
@@ -536,6 +545,18 @@ class MaxrfCorrectionsTab(QtWidgets.QWidget):
         self.img_item = pg.ImageItem()
         self.view.addItem(self.img_item)
         self.view.invertY(False)  # PyQtGraph uses bottom-left origin
+
+        self.shortcut_fit_preview = QtGui.QShortcut(QtGui.QKeySequence("F"), self.graphics)
+        self.shortcut_fit_preview.setContext(
+            QtCore.Qt.ShortcutContext.WidgetWithChildrenShortcut
+        )
+        self.shortcut_fit_preview.activated.connect(self._fit_preview_view)
+
+    def _fit_preview_view(self) -> None:
+        """Fit correction preview image in the pyqtgraph view."""
+        if self.base is None:
+            return
+        self.view.autoRange()
 
     def _build_folder_controls(self) -> None:
         """Folder browser and element selector controls."""
@@ -967,6 +988,18 @@ class MaxrfCorrectionsTab(QtWidgets.QWidget):
     def _log(self, msg: str) -> None:
         """Append message to info panel."""
         self.info.appendPlainText(msg)
+
+    def _reset_correction_params(self) -> None:
+        """Reset correction parameters while preserving UI signal bindings."""
+        for params in (self.params_a, self.params_b, self.params_c):
+            params.enabled = False
+            params.strength = 0.0
+            params.threshold = 0.0
+            params.softness = 0.0
+            params.blur_sigma = 0.0
+            params.dx = 0.0
+            params.dy = 0.0
+            params.invert = False
 
     def browse_folder(self) -> None:
         """Open folder dialog to select element maps directory."""
@@ -1414,9 +1447,7 @@ class MaxrfCorrectionsTab(QtWidgets.QWidget):
         self.session = session
         
         # Reset correction parameters when switching projects
-        self.params_a = CorrectionParams(enabled=False)
-        self.params_b = CorrectionParams(enabled=False)
-        self.params_c = CorrectionParams(enabled=False)
+        self._reset_correction_params()
         self.rotation_angle = 0
         self.mirror_h = False
         self.mirror_v = False
@@ -1444,6 +1475,16 @@ class MaxrfCorrectionsTab(QtWidgets.QWidget):
                 self.btn_browse.setToolTip("(Folder locked: using project workspace)")
                 self._refresh_element_list()
                 return
+
+        if session and session.maxrf_pipeline.last_selected_folder:
+            last_folder = Path(session.maxrf_pipeline.last_selected_folder)
+            if last_folder.exists() and last_folder.is_dir():
+                self.work_folder = last_folder
+                self.lbl_folder.setText(str(last_folder))
+                self.btn_browse.setEnabled(True)
+                self.btn_browse.setToolTip("")
+                self._refresh_element_list()
+                return
         
         # No project or no workspace: allow browsing
         self.btn_browse.setEnabled(True)
@@ -1463,24 +1504,8 @@ class MaxrfCorrectionsTab(QtWidgets.QWidget):
             self._refresh_element_list()
 
     def showEvent(self, event: QtGui.QShowEvent) -> None:
-        """Reset UI state when tab becomes visible (for new project opening)."""
+        """Refresh preview when tab becomes visible."""
         super().showEvent(event)
-        
-        # Reset all correction parameters and transforms when showing tab
-        self.params_a = CorrectionParams(enabled=False)
-        self.params_b = CorrectionParams(enabled=False)
-        self.params_c = CorrectionParams(enabled=False)
-        self.rotation_angle = 0
-        self.mirror_h = False
-        self.mirror_v = False
-        
-        # Clear correction layer images
-        self.corr_a = None
-        self.corr_b = None
-        self.corr_c = None
-        
-        # Update the UI to reflect reset state
-        self._refresh_correction_ui()
         self.update_preview()
 
     def _refresh_correction_ui(self) -> None:
