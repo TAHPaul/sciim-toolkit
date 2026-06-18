@@ -16,15 +16,17 @@ permissions:
 jobs:
   build-macos:
     # Build both Mac architectures in parallel:
-    #   macos-13 -> Intel (x86_64): runs on Intel Macs (and Apple Silicon via Rosetta)
-    #   macos-14 -> Apple Silicon (arm64): runs natively on M-series Macs
+    #   macos-15-intel -> Intel (x86_64): runs on Intel Macs (and on Apple Silicon via Rosetta).
+    #     NOTE: macos-13 (the old Intel image) was RETIRED by GitHub in Dec 2025 and now just
+    #     hangs in "queued" forever. macos-15-intel is its replacement and the LAST Intel image
+    #     GitHub will offer — all x86_64 macOS runners are removed in Fall 2027.
+    #   macos-14 -> Apple Silicon (arm64): runs natively on M-series Macs.
     # An arm64 build will NOT run on Intel, so we ship one zip per architecture.
-    # (macos-14 is what "macos-latest" currently resolves to; pinned for stability.)
     strategy:
       fail-fast: false
       matrix:
         include:
-          - runner: macos-13
+          - runner: macos-15-intel
             arch: intel
           - runner: macos-14
             arch: arm64
